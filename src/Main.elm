@@ -1,8 +1,9 @@
 module Main exposing (..)
 import Browser
+import Browser.Events exposing (onAnimationFrame)
 
 
-import Canvas exposing (rect, circle, shapes, fill)
+import Canvas exposing (rect, circle, shapes, fill, Shape)
 import Dict exposing (Dict)
 import Color exposing (..)
 import Json.Decode as Decode
@@ -10,6 +11,7 @@ import Time exposing (..)
 import Html exposing (Html, text, div, h1, img)
 import Html.Events exposing (keyCode, on)
 import Html.Attributes exposing (src, tabindex, style)
+import Html.Keyed as Keyed
 
 
 ---- PROGRAM ----
@@ -21,7 +23,7 @@ main =
         { view = view
         , init = \_ -> init
         , update = update
-        , subscriptions = always Sub.none
+        , subscriptions = subscriptions
         }
 
 
@@ -31,17 +33,16 @@ onKeyPress tagger =
 
 keyTagger key =
     case key of
-        65 -> Left
-        68 -> Right
-        83 -> Down
-        87 -> Up
+        65 -> Move Left
+        68 -> Move Right
+        83 -> Move Down
+        87 -> Move Up
         _ -> NoOp
 
 ---- SUBSCRIPTIONS ----
 
--- subscriptions : Model -> Sub Msg
--- subscriptions model =
---     Time.every 1000 Tick
+subscriptions : Model -> Sub Msg
+subscriptions model = onAnimationFrame Tick
 
 ---- MODEL ----
 
@@ -51,15 +52,16 @@ type alias Point2D =
     }
 
 type alias Model =
-    { movingItem: Point2D
-    , mapSize: Point2D
-    }
+        { movable: Point2D
+        , mapSize: Point2D
+        }
 
 
--- type Direction = Left | Right | Up | Down
+type Direction = Left | Right | Up | Down
 
+-- Position from top-left
 initialPosition =
-    { x = 125
+    { x = 80
     , y = 0
     }
 
@@ -71,63 +73,100 @@ mapSize =
 
 init : ( Model, Cmd Msg )
 init =
-    ( { movingItem = initialPosition, mapSize = mapSize}, Cmd.none )
+    ({ movable = initialPosition, mapSize = mapSize}, Cmd.none )
+
+moveLeft : Point2D -> Point2D
+moveLeft position =
+    if position.x - 5 < 0 then
+        { x = 0
+        , y =
+            position.x
+                |> round
+                |> remainderBy 5
+                |> toFloat
+
+        }
+    else
+        { x = position.x - 5
+        , y = position.y
+        }
 
 
-move : Float -> Float -> Msg -> Float
-move position mapDiameters direction =
-    case direction of
-        Left ->
-            if position - 5 > 0 then
-                position + 5
-            else
-                position
-        Right ->
-            if position + 5 < mapDiameters then
-                position + 5
-            else
-                position
-        Up ->
-            position
-        Down ->
-            position
-        NoOp ->
-            position
+
+
+
+
+
+
+
+
+-- move : Float -> Float -> Msg -> Float
+-- move position mapDiameters direction =
+--     case direction of
+--         Left ->
+--             if position - 5 > 0 then
+--                 position + 5
+--             else
+--                 position
+--         Right ->
+--             if position + 5 < mapDiameters then
+--                 position + 5
+--             else
+--                 position
+--         Up ->
+--             position
+--         Down ->
+--             position
+--         NoOp ->
+--             position
 
 
 
 ---- UPDATE ----
 
+setPosition : Point2D -> Direction -> Point2D -> Point2D
+setPosition mapArea direction position =
+    case direction of
+        Left ->
+            moveLeft position
+        Right ->
+            position
+        Down ->
+            position
+        Up ->
+            position
+
+
+ascendItem : Point2D -> Point2D -> Point2D
+ascendItem position mapArea =
+    if position.y + 1 < mapArea.y
+        then
+            { y = position.y + 1
+            , x = position.x
+            }
+    else
+        { y = 0
+        , x = position.x
+        }
+
+
+
+
 type Msg
-    = Left
-    | Right
-    | Up
-    | Down
+    = Move Direction
     | NoOp
+    | Tick Posix
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        Left ->
-            let
-                movingItem = model.movingItem
-                mapArea = model.mapSize
-
-                newMovingItem = { movingItem | x = move movingItem.x mapArea.x Left }
-            in
-            ({ model | movingItem = { movingItem | x = (move movingItem.x movingItem.x Left)}}, Cmd.none)
-        Right ->
-            Debug.log "Right"
-            (model, Cmd.none)
-        Down ->
-            Debug.log "down"
-            (model, Cmd.none)
-        Up ->
-            Debug.log "down"
-            (model, Cmd.none)
+        Move direction ->
+            ({model | movable = setPosition model.mapSize direction model.movable}, Cmd.none)
         NoOp ->
-             Debug.log "noop"
             (model, Cmd.none)
+        Tick posix ->
+            ({model | movable = ascendItem model.movable model.mapSize}, Cmd.none)
+
 
 
 
@@ -137,7 +176,7 @@ update msg model =
 view : Model -> Html Msg
 view model =
     let
-        movingItem = model.movingItem
+        movable = model.movable
     in
         div
         [ style "display" "flex"
@@ -146,14 +185,23 @@ view model =
         , style "background-color" "#fafafa"
         ]
         [ Canvas.toHtml
-            ( 250, 500 )
+            ( mapSize.x, mapSize.y )
             [ tabindex 100
             , style "border" "10px solid rgba(0,0,0,0.1)"
             , style "background-color" "#FFFFFF"
             ,  onKeyPress keyTagger ]
             [
-                shapes
+                clearScreen
+                , shapes
                     [ fill (Color.rgb255 176 208 211) ]
-                    [ rect (movingItem.x, movingItem.y) 100 50 ]
+                    [ drawPoint movable ]
             ]
         ]
+
+
+clearScreen =
+    shapes [ fill Color.white ] [ rect ( 0, 0 ) mapSize.x mapSize.y ]
+
+drawPoint : Point2D -> Shape
+drawPoint { x, y } =
+    rect ( x, y ) 100 50
